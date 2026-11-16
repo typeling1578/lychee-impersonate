@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use http::Method;
+use http::{HeaderMap, Method};
 use reqwest::{Client, Request};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -40,6 +40,16 @@ pub struct HostPool {
 
     /// Host-specific clients
     client_map: ClientMap,
+
+    /// Headers to set on every request, in order; see [`HostPool::with_ordered_headers`].
+    ordered_headers: Option<OrderedHeaders>,
+}
+
+/// Default headers of the default client and of the host-specific clients.
+#[derive(Debug)]
+struct OrderedHeaders {
+    default: HeaderMap,
+    hosts: HashMap<HostKey, HeaderMap>,
 }
 
 impl HostPool {
@@ -57,7 +67,24 @@ impl HostPool {
             host_configs,
             default_client,
             client_map,
+            ordered_headers: None,
         }
+    }
+
+    /// Set the clients' default headers on every request built by
+    /// [`HostPool::build_request`], so that they are sent in the given order.
+    ///
+    /// reqwest sends a request's own headers first and appends the default
+    /// headers it doesn't have, but it always puts `Accept` first among the
+    /// default headers. Browser impersonation needs the browser's order.
+    #[must_use]
+    pub fn with_ordered_headers(
+        mut self,
+        default: HeaderMap,
+        hosts: HashMap<HostKey, HeaderMap>,
+    ) -> Self {
+        self.ordered_headers = Some(OrderedHeaders { default, hosts });
+        self
     }
 
     /// Try to execute a [`Request`] with appropriate per-host rate limiting.
@@ -87,11 +114,13 @@ impl HostPool {
     /// - The request fails to build
     pub fn build_request(&self, method: Method, uri: &Uri) -> Result<Request> {
         let host_key = HostKey::try_from(uri)?;
-        let host = self.get_or_create_host(host_key);
-        host.get_client()
-            .request(method, uri.url.clone())
-            .build()
-            .map_err(ErrorKind::BuildRequestClient)
+        let host = self.get_or_create_host(host_key.clone());
+        let mut request = host.get_client().request(method, uri.url.clone());
+        if let Some(ordered) = &self.ordered_headers {
+            let headers = ordered.hosts.get(&host_key).unwrap_or(&ordered.default);
+            request = request.headers(headers.clone());
+        }
+        request.build().map_err(ErrorKind::BuildRequestClient)
     }
 
     /// Get an existing host or create a new one for the given hostname

@@ -129,6 +129,11 @@ include_fragments = "full"
 # Minimum accepted TLS Version
 min_tls = "TLSv1_3"
 
+# Impersonate a browser: use its TLS fingerprint, HTTP/2 settings and default
+# request headers. `header` and `user_agent` override the browser's headers.
+# `chrome` and `firefox` are the newest profiles of each browser.
+impersonate = "firefox"
+
 #############################  Exclusions  ##########################
 
 # Skip missing input files (default is to error if they don't exist).

@@ -29,7 +29,7 @@ use lychee_lib::{
     DEFAULT_RETRY_WAIT_TIME_SECS, DEFAULT_TIMEOUT_SECS, FileExtensions, FileType,
     FragmentCheckerOptions, Input, StatusCodeSelector, archive::Archive,
 };
-use lychee_lib::{DEFAULT_USER_AGENT, Preprocessor};
+use lychee_lib::{DEFAULT_USER_AGENT, Preprocessor, impersonate};
 use secrecy::SecretString;
 use serde::{Deserialize, Deserializer};
 use std::collections::{HashMap, HashSet};
@@ -307,6 +307,15 @@ pub(crate) struct Config {
     /// Minimum accepted TLS Version
     #[arg(long, value_parser = PossibleValuesParser::new(TlsVersion::VARIANTS).map(|s| s.parse::<TlsVersion>().unwrap()))]
     pub(crate) min_tls: Option<TlsVersion>,
+
+    /// Impersonate a browser
+    ///
+    /// Requests use the browser's TLS fingerprint, HTTP/2 settings and default
+    /// headers. `--header` overrides the browser's headers, and so does
+    /// `--user-agent`. `chrome` and `firefox` are the newest profiles of each
+    /// browser.
+    #[arg(long, value_parser = PossibleValuesParser::new(impersonate::profile_names()))]
+    pub(crate) impersonate: Option<String>,
 
     /// Maximum number of concurrent network requests
     ///
@@ -952,6 +961,7 @@ impl Config {
                 include_verbatim,
                 include_wikilinks,
                 index_files,
+                impersonate,
                 insecure,
                 min_tls,
                 no_ignore,

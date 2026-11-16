@@ -25,6 +25,9 @@ pub enum ErrorKind {
     /// The network client required for making requests cannot be created
     #[error("Failed to create HTTP request client: {0}")]
     BuildRequestClient(#[source] reqwest::Error),
+    /// The browser to impersonate is unknown or cannot be impersonated
+    #[error("Cannot impersonate browser: {0}")]
+    InvalidImpersonation(String),
 
     /// Network error while using GitHub API
     #[error("Network error while using GitHub client")]
@@ -248,6 +251,9 @@ impl ErrorKind {
             ErrorKind::BuildRequestClient(_) => {
                 format!("{self}: Check system configuration")
             }
+            ErrorKind::InvalidImpersonation(_) => {
+                format!("{self}. Check the browser profile and TLS options")
+            }
             ErrorKind::BuildGithubClient(error) => {
                 format!("{self}: {error}. Check token and network connectivity")
             }
@@ -361,6 +367,7 @@ impl PartialEq for ErrorKind {
             (Self::BuildRequestClient(e1), Self::BuildRequestClient(e2)) => {
                 e1.to_string() == e2.to_string()
             }
+            (Self::InvalidImpersonation(s1), Self::InvalidImpersonation(s2)) => s1 == s2,
             (Self::RuntimeJoin(e1), Self::RuntimeJoin(e2)) => e1.to_string() == e2.to_string(),
             (Self::ReadFileInput(e1, s1), Self::ReadFileInput(e2, s2)) => {
                 e1.kind() == e2.kind() && s1 == s2
@@ -420,6 +427,7 @@ impl Hash for ErrorKind {
             Self::NetworkRequest(e) => e.to_string().hash(state),
             Self::ReadResponseBody(e) => e.to_string().hash(state),
             Self::BuildRequestClient(e) => e.to_string().hash(state),
+            Self::InvalidImpersonation(s) => s.hash(state),
             Self::BuildGithubClient(e) => e.to_string().hash(state),
             Self::GithubRequest(e) => e.to_string().hash(state),
             Self::InvalidGithubUrl(s) => s.hash(state),
