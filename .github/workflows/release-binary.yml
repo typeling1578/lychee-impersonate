@@ -1,5 +1,13 @@
 # CI pipeline for stable binaries
-# Keep in sync with:
+#
+# lychee-impersonate: adapted from upstream's release-binary.yml so that it runs
+# in this fork. Publishing a GitHub release builds the binaries for the same
+# platforms as upstream and attaches them to the release, with the same archive
+# names (`lychee-<target>.tar.gz`/`.zip`). Upstream's official-repository checks
+# and the cargo-binstall check (which reads upstream's crates.io metadata) are
+# removed.
+#
+# Upstream keeps this in sync with:
 #   - .github/workflows/debug_build.yml
 #   - Dockerfile-CI.Dockerfile
 #   - Dockerfile-CI.alpine.Dockerfile
@@ -50,13 +58,9 @@ jobs:
         uses: bruceadams/get-release@v1.3.2
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        # Skip step if not in the official repository as it would fail.
-        # Instead fail at the end of this workflow.
-        if: ${{ github.repository == 'lycheeverse/lychee' }}
 
   upload-schema:
     needs: [create-release]
-    if: github.repository == 'lycheeverse/lychee'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout release
@@ -202,6 +206,12 @@ jobs:
           echo "cargo command is: ${{ env.CARGO }}"
           echo "target flag is: ${{ env.TARGET_FLAGS }}"
           echo "target dir is: ${{ env.TARGET_DIR }}"
+
+      - name: Fetch dependencies
+        # Fetch the git dependencies (the patched crates in `[patch.crates-io]`)
+        # on the host, so that builds inside the cross containers don't need to.
+        shell: bash
+        run: cargo fetch
 
       - name: Build release binary
         shell: bash
@@ -353,7 +363,7 @@ jobs:
         if: ${{ needs.create-release.outputs.upload_url == '' }}
         shell: bash
         run: |
-          echo "Releasing only works on the master/main branch in the official repository."
+          echo "No GitHub release found for ${{ github.ref }}. Publish a release, or run this workflow on a release tag."
           exit 1
 
       - name: Upload release archive
@@ -376,23 +386,6 @@ jobs:
           name: release-asset-digests-${{ matrix.target }}
           path: "*.sha256"
           if-no-files-found: error
-
-  binstall-check:
-    needs: [build-release]
-    runs-on: ubuntu-latest
-    env:
-      # Avoid 403 rate-limit failures when binstall queries GitHub releases.
-      GITHUB_TOKEN: ${{ github.token }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: cargo-bins/cargo-binstall@main
-
-      # Uses nightly to preview upcoming release archive changes.
-      - run: sed -i.bak 's|/{ name }-v{ version }/|/nightly/|' lychee-bin/Cargo.toml
-        if: github.event.release.prerelease
-
-      # Use `--manifest-path .` so binstall validates the in-tree binstall metadata.
-      - run: cargo binstall --manifest-path . --strategies crate-meta-data lychee --no-confirm --verbose
 
   attest:
     name: attest
