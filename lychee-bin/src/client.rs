@@ -3,7 +3,7 @@ use crate::parse::parse_remaps;
 use anyhow::{Context, Result};
 use http::{HeaderMap, StatusCode};
 use lychee_lib::BasicAuthExtractor;
-use lychee_lib::{Client, ClientBuilder, ratelimit::RateLimitConfig};
+use lychee_lib::{Client, ClientBuilder, impersonate::Impersonate, ratelimit::RateLimitConfig};
 use regex::RegexSet;
 use reqwest_cookie_store::CookieStoreMutex;
 use std::collections::HashSet;
@@ -28,6 +28,11 @@ pub(crate) fn create(cfg: &Config, cookie_jar: Option<&Arc<CookieStoreMutex>>) -
     };
 
     let headers = HeaderMap::from_header_pairs(&cfg.headers())?;
+    let impersonate = cfg
+        .impersonate
+        .as_deref()
+        .map(str::parse::<Impersonate>)
+        .transpose()?;
 
     let basic_auth = if let Some(basic_auth) = &cfg.basic_auth {
         BasicAuthExtractor::new(basic_auth)?
@@ -59,6 +64,7 @@ pub(crate) fn create(cfg: &Config, cookie_jar: Option<&Arc<CookieStoreMutex>>) -
         .require_https(cfg.require_https())
         .cookie_jar(cookie_jar.cloned())
         .min_tls_version(cfg.min_tls.clone().map(Into::into))
+        .impersonate(impersonate)
         .fragment_checker_options(cfg.fragment_checker_options())
         .fallback_extensions(cfg.fallback_extensions.clone())
         .index_files(cfg.index_files.clone())

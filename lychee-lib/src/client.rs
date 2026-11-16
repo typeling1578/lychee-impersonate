@@ -14,7 +14,11 @@
     clippy::used_underscore_binding
 )]
 use crate::{BasicAuthExtractor, remap::Remap};
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use http::{
     StatusCode,
@@ -33,6 +37,7 @@ use crate::{
     chain::RequestChain,
     checker::{file::FileChecker, mail::MailChecker, website::WebsiteChecker},
     filter::Filter,
+    impersonate::Impersonate,
     ratelimit::{ClientMap, HostConfigs, HostKey, HostPool, RateLimitConfig},
     remap::Remaps,
     types::{DEFAULT_ACCEPTED_STATUS_CODES, Redirects, redirect_history::RedirectHistory},
@@ -231,6 +236,17 @@ pub struct ClientBuilder {
     /// Minimum accepted TLS version.
     min_tls_version: Option<tls::Version>,
 
+    /// Browser to impersonate.
+    ///
+    /// Requests use the browser's TLS ClientHello, HTTP/2 settings and default
+    /// headers. [`ClientBuilder::custom_headers`] override the browser's
+    /// headers, and so does [`ClientBuilder::user_agent`] unless it is
+    /// [`DEFAULT_USER_AGENT`].
+    ///
+    /// The HTTP/2 pseudo-header order also needs an environment variable; see
+    /// [`Impersonate::h2_pseudo_header_order`].
+    impersonate: Option<Impersonate>,
+
     /// User-agent used for checking links.
     ///
     /// Defaults to [`DEFAULT_USER_AGENT`].
@@ -372,12 +388,21 @@ impl ClientBuilder {
 
         let client_map = self.build_host_clients(&redirect_history)?;
 
-        let host_pool = HostPool::new(
+        // Send the browser's headers in the browser's order.
+        let ordered_headers = match self.impersonate {
+            Some(_) => Some((self.default_headers()?, self.host_headers()?)),
+            None => None,
+        };
+
+        let mut host_pool = HostPool::new(
             self.rate_limit_config,
             self.hosts,
             reqwest_client,
             client_map,
         );
+        if let Some((default, hosts)) = ordered_headers {
+            host_pool = host_pool.with_ordered_headers(default, hosts);
+        }
 
         let github_client = match self.github_token.as_ref().map(ExposeSecret::expose_secret) {
             Some(token) if !token.is_empty() => Some(
@@ -434,17 +459,27 @@ impl ClientBuilder {
 
     /// Build the host-specific clients with their host-specific headers
     fn build_host_clients(&self, redirect_history: &RedirectHistory) -> Result<ClientMap> {
-        self.hosts
-            .iter()
-            .map(|(host, config)| {
-                let mut headers = self.default_headers()?;
-                headers.extend(config.headers.clone());
+        self.host_headers()?
+            .into_iter()
+            .map(|(host, headers)| {
                 let client = self
                     .build_client(redirect_history.clone())?
                     .default_headers(headers)
                     .build()
                     .map_err(ErrorKind::BuildRequestClient)?;
-                Ok((HostKey::from(host.as_str()), client))
+                Ok((host, client))
+            })
+            .collect()
+    }
+
+    /// Default headers of the host-specific clients
+    fn host_headers(&self) -> Result<HashMap<HostKey, HeaderMap>> {
+        self.hosts
+            .iter()
+            .map(|(host, config)| {
+                let mut headers = self.default_headers()?;
+                headers.extend(config.headers.clone());
+                Ok((HostKey::from(host.as_str()), headers))
             })
             .collect()
     }
@@ -463,8 +498,14 @@ impl ClientBuilder {
             builder = builder.cookie_provider(cookie_jar);
         }
 
-        if let Some(min_tls) = self.min_tls_version {
-            builder = builder.min_tls_version(min_tls);
+        if let Some(impersonate) = &self.impersonate {
+            builder = impersonate.configure(builder, self.allow_insecure, self.min_tls_version)?;
+        } else {
+            // Brotli, Zstandard and Deflate are only enabled for `impersonate`.
+            builder = builder.no_brotli().no_zstd().no_deflate();
+            if let Some(min_tls) = self.min_tls_version {
+                builder = builder.min_tls_version(min_tls);
+            }
         }
 
         if let Some(timeout) = self.timeout {
@@ -476,10 +517,19 @@ impl ClientBuilder {
 
     fn default_headers(&self) -> Result<HeaderMap> {
         let user_agent = self.user_agent.clone();
-        let mut headers = self.custom_headers.clone();
+        let mut headers = match &self.impersonate {
+            // Custom headers replace the browser's but keep their position.
+            Some(impersonate) => impersonate.headers()?,
+            None => HeaderMap::new(),
+        };
+        headers.extend(self.custom_headers.clone());
 
-        if let Some(prev_user_agent) =
-            headers.insert(header::USER_AGENT, HeaderValue::try_from(&user_agent)?)
+        // When impersonating, the default user agent gives way to the browser's.
+        let keep_browser_user_agent =
+            self.impersonate.is_some() && user_agent == DEFAULT_USER_AGENT;
+        if !keep_browser_user_agent
+            && let Some(prev_user_agent) =
+                headers.insert(header::USER_AGENT, HeaderValue::try_from(&user_agent)?)
         {
             debug!(
                 "Found user-agent in headers: {}. Overriding it with {user_agent}.",
@@ -487,10 +537,13 @@ impl ClientBuilder {
             );
         }
 
-        headers.insert(
-            header::TRANSFER_ENCODING,
-            HeaderValue::from_static("chunked"),
-        );
+        // Browsers don't send this header with requests that have no body.
+        if self.impersonate.is_none() {
+            headers.insert(
+                header::TRANSFER_ENCODING,
+                HeaderValue::from_static("chunked"),
+            );
+        }
 
         Ok(headers)
     }

@@ -264,6 +264,13 @@
         "$ref": "#/definitions/HostConfig"
       }
     },
+    "impersonate": {
+      "description": "Impersonate a browser\n\nRequests use the browser's TLS fingerprint, HTTP/2 settings and default\nheaders. `--header` overrides the browser's headers, and so does\n`--user-agent`. `chrome` and `firefox` are the newest profiles of each\nbrowser.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "include": {
       "description": "URLs to check (supports regex). Has preference over all excludes.",
       "type": "array",

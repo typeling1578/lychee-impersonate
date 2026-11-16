@@ -77,6 +77,7 @@ use ring as _; // required for apple silicon
 use lychee_lib::BasicAuthExtractor;
 use lychee_lib::Collector;
 use lychee_lib::CookieJar;
+use lychee_lib::impersonate::{H2_PSEUDO_HEADER_ORDER_ENV, Impersonate};
 
 mod cache;
 mod client;
@@ -298,6 +299,23 @@ fn run_main() -> Result<i32> {
     if let Some(mode) = opts.config.generate {
         print!("{}", generate(&mode)?);
         exit(ExitCode::Success as i32);
+    }
+
+    if let Some(name) = &opts.config.impersonate {
+        match name.parse::<Impersonate>() {
+            Ok(impersonate) => {
+                if let Some(order) = impersonate.h2_pseudo_header_order() {
+                    // SAFETY: No other threads are running yet: the Tokio runtime
+                    // is created below. The patched `h2` crate reads this variable
+                    // for every request, so it can't be passed in any other way.
+                    unsafe { std::env::set_var(H2_PSEUDO_HEADER_ORDER_ENV, order) };
+                }
+            }
+            Err(e) => {
+                error!("Error while loading config: {e}");
+                exit(ExitCode::ConfigFile as i32);
+            }
+        }
     }
 
     let runtime = match opts.config.threads {
