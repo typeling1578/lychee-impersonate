@@ -81,47 +81,39 @@ jobs:
             os: ubuntu-latest
             rust: stable
             target: x86_64-unknown-linux-gnu
-            strip: x86_64-linux-gnu-strip
           - build: x86_64-musl
             os: ubuntu-latest
             rust: stable
             target: x86_64-unknown-linux-musl
-            strip: x86_64-linux-musl-strip
           - build: arm-gnueabihf
             os: ubuntu-latest
             rust: stable
             target: armv7-unknown-linux-gnueabihf
-            strip: arm-linux-gnueabihf-strip
             qemu: qemu-arm
           - build: arm-musleabi
             os: ubuntu-latest
             rust: stable
             target: arm-unknown-linux-musleabi
-            strip: arm-linux-musleabi-strip
             qemu: qemu-arm
           - build: arm-musleabihf
             os: ubuntu-latest
             rust: stable
             target: arm-unknown-linux-musleabihf
-            strip: arm-linux-musleabihf-strip
             qemu: qemu-arm
           - build: aarch64-gnu
             os: ubuntu-latest
             rust: stable
             target: aarch64-unknown-linux-gnu
-            strip: aarch64-linux-gnu-strip
             qemu: qemu-aarch64
           - build: aarch64-musl
             os: ubuntu-latest
             rust: stable
             target: aarch64-unknown-linux-musl
-            strip: aarch64-linux-musl-strip
             qemu: qemu-aarch64
           - build: i686-gnu
             os: ubuntu-latest
             rust: stable
             target: i686-unknown-linux-gnu
-            strip: x86_64-linux-gnu-strip
             qemu: i386
           # macOS builds
           - build: x86_64-macos
@@ -200,7 +192,12 @@ jobs:
       - name: Build release binary
         shell: bash
         run: |
-          ${{ env.CARGO }} build --verbose --release ${{ env.TARGET_FLAGS }}
+          # Let rustc strip cross builds while linking: the cross images don't
+          # ship a `strip` for every target (the musl ones have none).
+          if [[ "${{ env.CARGO }}" == cross ]]; then
+            strip_flags="--config profile.release.strip=true"
+          fi
+          ${{ env.CARGO }} build --verbose --release ${{ env.TARGET_FLAGS }} $strip_flags
           if [[ "${{ matrix.os }}" == windows-* ]]; then
             bin="target/${{ matrix.target }}/release/lychee.exe"
           else
@@ -219,16 +216,6 @@ jobs:
         if: matrix.target == 'x86_64-unknown-linux-gnu'
         shell: bash
         run: strip "$BIN"
-
-      - name: Strip release binary (cross)
-        if: env.CARGO == 'cross'
-        shell: bash
-        run: |
-          docker run --rm -v \
-            "$PWD/target:/target:Z" \
-            "ghcr.io/cross-rs/${{ matrix.target }}:main" \
-            "${{ matrix.strip }}" \
-            "/$BIN"
 
       - name: Determine archive name
         shell: bash
