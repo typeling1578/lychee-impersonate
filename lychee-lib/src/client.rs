@@ -238,7 +238,7 @@ pub struct ClientBuilder {
 
     /// Browser to impersonate.
     ///
-    /// Requests use the browser's TLS ClientHello, HTTP/2 settings and default
+    /// Requests use the browser's TLS `ClientHello`, HTTP/2 settings and default
     /// headers. [`ClientBuilder::custom_headers`] override the browser's
     /// headers, and so does [`ClientBuilder::user_agent`] unless it is
     /// [`DEFAULT_USER_AGENT`].

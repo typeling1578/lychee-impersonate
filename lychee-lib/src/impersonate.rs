@@ -1,7 +1,7 @@
 //! Browser impersonation.
 //!
 //! Makes requests look like they come from a real browser: the TLS
-//! ClientHello, the HTTP/2 settings and pseudo-header order, and the default
+//! `ClientHello`, the HTTP/2 settings and pseudo-header order, and the default
 //! request headers all come from the browser fingerprints of
 //! [impit](https://github.com/apify/impit).
 //!
@@ -33,10 +33,13 @@ use crate::{ErrorKind, Result};
 /// start, e.g. at the top of `main`. See [`Impersonate::h2_pseudo_header_order`].
 pub const H2_PSEUDO_HEADER_ORDER_ENV: &str = "IMPIT_H2_PSEUDOHEADERS_ORDER";
 
+/// A browser profile name and the function that returns its fingerprint.
+type Profile = (&'static str, fn() -> BrowserFingerprint);
+
 /// Browser profiles that can be impersonated, by name.
 ///
 /// `chrome` and `firefox` are aliases for the newest profile of that browser.
-const PROFILES: &[(&str, fn() -> BrowserFingerprint)] = &[
+const PROFILES: &[Profile] = &[
     ("chrome", database::chrome_157::fingerprint),
     ("firefox", database::firefox_158::fingerprint),
     ("chrome_100", database::chrome_100::fingerprint),
@@ -208,7 +211,7 @@ impl Impersonate {
                 .map_err(|e| self.error(format!("cannot set up ECH GREASE: {e}")))?;
             ClientConfig::builder_with_provider(provider)
                 .with_ech(ech_mode)
-                .map_err(|e| self.error(e.to_string()))?
+                .map_err(|e| self.error(e))?
                 .dangerous()
                 .with_custom_certificate_verifier(verifier)
                 .with_tls_fingerprint(rustls_fingerprint)
@@ -220,14 +223,13 @@ impl Impersonate {
                     (true, true) => &[&rustls::version::TLS13],
                     (false, false) => &[&rustls::version::TLS12],
                     (false, true) => {
-                        return Err(self.error(
-                            "the browser only supports TLS 1.2, but TLS 1.3 is required".into(),
-                        ));
+                        return Err(self
+                            .error("the browser only supports TLS 1.2, but TLS 1.3 is required"));
                     }
                 };
             ClientConfig::builder_with_provider(provider)
                 .with_protocol_versions(versions)
-                .map_err(|e| self.error(e.to_string()))?
+                .map_err(|e| self.error(e))?
                 .dangerous()
                 .with_custom_certificate_verifier(verifier)
                 .with_tls_fingerprint(rustls_fingerprint)
@@ -258,7 +260,7 @@ impl Impersonate {
         Ok(config)
     }
 
-    fn error(&self, message: String) -> ErrorKind {
+    fn error(&self, message: impl fmt::Display) -> ErrorKind {
         ErrorKind::InvalidImpersonation(format!("{}: {message}", self.name))
     }
 }
