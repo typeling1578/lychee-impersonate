@@ -365,6 +365,9 @@ mod tests {
     /// This prevents a regression of <https://github.com/lycheeverse/lychee/issues/2024>
     #[tokio::test]
     async fn test_github_client_integration() {
+        // The patched rustls enables both providers; `ClientBuilder::client`
+        // installs the default that octocrab needs, but this test skips it.
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         let client = Octocrab::builder().personal_token("dummy").build().unwrap();
         let uri =
             GithubUri::try_from(Uri::try_from("https://github.com/lycheeverse/lychee").unwrap())
