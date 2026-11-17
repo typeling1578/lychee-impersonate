@@ -19,6 +19,28 @@ Available as command-line utility,
 
 </div>
 
+> [!NOTE]
+> **lychee-impersonate** is a fork of [lychee](https://github.com/lycheeverse/lychee)
+> that adds `--impersonate`. With it, requests look like they come from a real
+> browser: the TLS ClientHello, the HTTP/2 settings and pseudo-header order, and
+> the default request headers are those of the chosen browser. This helps with
+> sites that block link checkers by their TLS or HTTP/2 fingerprint.
+>
+> ```bash
+> lychee --impersonate firefox README.md
+> ```
+>
+> `chrome` and `firefox` are the newest profiles of each browser; `lychee --help`
+> lists them all. `--header` and `--user-agent` still override the browser's
+> headers. HTTP/1.1 requests send the `Host` header last, unlike browsers.
+>
+> The browser fingerprints come from [impit](https://github.com/apify/impit)
+> (Apache License 2.0), and so do the patched `rustls`, `h2`, `hyper-util` and
+> `tower-http` crates that make them possible (see `[patch.crates-io]` in
+> `Cargo.toml`). Because of these patches, the fork can only be built from this
+> repository, not from crates.io. If Cargo fails to fetch the patched crates,
+> set `CARGO_NET_GIT_FETCH_WITH_CLI=true`.
+
 ![Lychee demo](./assets/screencast.svg)
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
@@ -618,6 +640,13 @@ Options:
 
   -i, --insecure[=<false|true>]
           Proceed for server connections considered insecure (invalid TLS)
+
+      --impersonate <IMPERSONATE>
+          Impersonate a browser
+
+          Requests use the browser's TLS fingerprint, HTTP/2 settings and default headers. `--header` overrides the browser's headers, and so does `--user-agent`. `chrome` and `firefox` are the newest profiles of each browser.
+
+          [possible values: chrome, firefox, chrome_100, chrome_101, chrome_104, chrome_107, chrome_110, chrome_116, chrome_124, chrome_125, chrome_131, chrome_133, chrome_136, chrome_142, chrome_151, chrome_155, chrome_156, chrome_157, firefox_128, firefox_133, firefox_135, firefox_144, firefox_158, ios_18, okhttp3, okhttp4, okhttp5]
 
       --include <INCLUDE>
           URLs to check (supports regex). Has preference over all excludes
